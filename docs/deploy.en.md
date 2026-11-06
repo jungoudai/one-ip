@@ -81,11 +81,11 @@ Workers retains native rate limiting. Pages and Docker use per-instance memory l
 
 These paths skip the same-origin check and rate limit, return no body and are never cached:
 
-| Path            | Behavior                                                                                                                                                                                                                                      |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/generate_204` | HTTP 204, usable as a `generate_204` URL for proxy clients and network checks                                                                                                                                                                 |
-| `/generate_200` | HTTP 200 with `Content-Length: 0`                                                                                                                                                                                                             |
-| `/fin`          | Docker / Node: closes the TCP connection immediately without replying (FIN; clients see an empty reply). Cloudflare Workers / Pages: the edge owns the TCP connection, so the Worker cannot send FIN; it returns 204 with `Connection: close` |
+| Path            | Behavior                                                                                                                                                                                                                                                                                           |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/generate_204` | HTTP 204, usable as a `generate_204` URL for proxy clients and network checks                                                                                                                                                                                                                      |
+| `/generate_200` | HTTP 200 with `Content-Length: 0`                                                                                                                                                                                                                                                                  |
+| `/fin`          | Returns a Hello World HTML page with `Connection: close`. Docker / Node: closes the TCP connection (FIN) right after the page is sent. Cloudflare Workers / Pages: the page is served, but the edge owns the TCP connection, so the Worker cannot send FIN and Cloudflare decides when to close it |
 
 ## Verification (optional)
 

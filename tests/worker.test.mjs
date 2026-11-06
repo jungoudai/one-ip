@@ -439,14 +439,16 @@ test("connectivity probes return empty 204/200 without hitting assets or the API
   for (const [path, status] of [
     ["/generate_204", 204],
     ["/generate_200", 200],
-    ["/fin", 204],
+    ["/fin", 200],
   ]) {
     const response = await worker.fetch(
       request(path, { headers: { Origin: "https://other.example" } }),
       blocked,
     );
     assert.equal(response.status, status, path);
-    assert.equal(await response.text(), "", path);
+    const body = await response.text();
+    if (path === "/fin") assert.match(body, /<h1>Hello World<\/h1>/);
+    else assert.equal(body, "", path);
     assert.match(response.headers.get("Cache-Control"), /no-store/, path);
     const head = await worker.fetch(request(path, { method: "HEAD" }), blocked);
     assert.equal(head.status, status, path);

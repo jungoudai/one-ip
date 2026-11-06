@@ -15,12 +15,6 @@ const { handle, securityHeaders } = await createApp({
 const server = createServer(
   { maxHeaderSize: 16_384, requestTimeout: 30_000 },
   async (incoming, outgoing) => {
-    // Close the TCP connection right away: end() half-closes the socket, so
-    // the kernel sends FIN (not RST) and the client sees an empty reply.
-    if (incoming.url?.split("?")[0] === FIN_PATH) {
-      incoming.socket.end();
-      return;
-    }
     try {
       const headers = new Headers();
       for (const [name, value] of Object.entries(incoming.headers))
@@ -41,6 +35,9 @@ const server = createServer(
       outgoing.writeHead(response.status, outHeaders);
       if (!response.body) outgoing.end();
       else await pipeline(Readable.fromWeb(response.body), outgoing);
+      // Send FIN as soon as the reply is written: end() half-closes the
+      // socket (not RST), so the client gets the full page, then the close.
+      if (incoming.url?.split("?")[0] === FIN_PATH) incoming.socket.end();
     } catch (error) {
       console.error(
         JSON.stringify({ event: "server_error", type: error?.name ?? "Error" }),

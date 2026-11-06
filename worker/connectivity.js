@@ -15,19 +15,24 @@ const headers = (extra = {}) => ({
   ...extra,
 });
 
-/** Returns a Response for a probe path, or undefined for any other path. */
-export function connectivityProbe(request, pathname) {
+/**
+ * Returns a Response for a probe path, or undefined for any other path.
+ * `fin` is only enabled by the Node server: on Cloudflare the edge owns the
+ * client TCP connection, so /fin could not send FIN and answers 404 instead.
+ */
+export function connectivityProbe(request, pathname, { fin = false } = {}) {
   const status = STATUS[pathname];
   if (status === undefined && pathname !== FIN_PATH) return undefined;
+  if (pathname === FIN_PATH && !fin)
+    return new Response("Not found", { status: 404, headers: headers() });
   if (!["GET", "HEAD"].includes(request.method))
     return new Response(null, {
       status: 405,
       headers: headers({ Allow: "GET, HEAD" }),
     });
   if (pathname === FIN_PATH)
-    // Reply with a tiny page and ask for the connection to be closed. The
-    // Node server ends the socket (FIN) once this is written; on Cloudflare
-    // the edge owns the client TCP connection and decides when to close it.
+    // Reply with a tiny page; the Node server ends the socket (FIN) once
+    // this is written.
     return new Response(request.method === "HEAD" ? null : FIN_HTML, {
       headers: headers({
         "Content-Type": "text/html; charset=utf-8",

@@ -20,7 +20,9 @@ import { lookupRegistration, registrationTarget } from "./whois.js";
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const probe = connectivityProbe(request, url.pathname);
+    const probe = connectivityProbe(request, url.pathname, {
+      fin: env.FIN_ENABLED === "true",
+    });
     if (probe) return probe;
     if (url.pathname === "/worker" || url.pathname.startsWith("/worker/"))
       return new Response("Not found", { status: 404 });

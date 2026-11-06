@@ -431,6 +431,7 @@ test("WeChat icon uses its official resource because the icon provider returns 4
 test("connectivity probes return empty 204/200 without hitting assets or the API guards", async () => {
   const blocked = {
     ...env,
+    FIN_ENABLED: "true",
     ASSETS: { fetch: async () => assert.fail("probe must not read assets") },
     API_LIMITER: {
       limit: async () => assert.fail("probe is not rate limited"),
@@ -457,6 +458,13 @@ test("connectivity probes return empty 204/200 without hitting assets or the API
     (await worker.fetch(request("/fin"), blocked)).headers.get("Connection"),
     "close",
   );
+  // Cloudflare cannot send FIN, so the Workers/Pages build blocks /fin.
+  const cloudflare = await worker.fetch(request("/fin"), {
+    ...blocked,
+    FIN_ENABLED: undefined,
+  });
+  assert.equal(cloudflare.status, 404);
+  assert.equal(await cloudflare.text(), "Not found");
   assert.equal(
     (await worker.fetch(request("/generate_204", { method: "POST" }), blocked))
       .status,

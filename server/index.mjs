@@ -4,6 +4,7 @@ import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { createApp } from "./app.mjs";
 import { installMemoryCache } from "./memory-cache.mjs";
+import { FIN_PATH } from "../worker/connectivity.js";
 
 // Node has no Cloudflare edge cache; keep upstream lookups bounded per process.
 installMemoryCache();
@@ -34,6 +35,9 @@ const server = createServer(
       outgoing.writeHead(response.status, outHeaders);
       if (!response.body) outgoing.end();
       else await pipeline(Readable.fromWeb(response.body), outgoing);
+      // Send FIN as soon as the reply is written: end() half-closes the
+      // socket (not RST), so the client gets the full page, then the close.
+      if (incoming.url?.split("?")[0] === FIN_PATH) incoming.socket.end();
     } catch (error) {
       console.error(
         JSON.stringify({ event: "server_error", type: error?.name ?? "Error" }),

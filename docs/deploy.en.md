@@ -77,6 +77,16 @@ Docker geolocation uses public providers and does not present private socket add
 
 Workers retains native rate limiting. Pages and Docker use per-instance memory limits: 180 ordinary requests/minute, a separate 180 icon requests/minute, and 5 POST requests/minute, counting each IPv6 /64 as one client. Counts reset on restart and are not shared across replicas. Pages spreads counts across many edge isolates, so the fallback is weak there; add a Cloudflare WAF rate limiting rule for `/api/*` when strict limits matter.
 
+## Connectivity probes
+
+These paths skip the same-origin check and rate limit, return no body and are never cached:
+
+| Path            | Behavior                                                                                                                                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/generate_204` | HTTP 204, usable as a `generate_204` URL for proxy clients and network checks                                                                                                                           |
+| `/generate_200` | HTTP 200 with `Content-Length: 0`                                                                                                                                                                       |
+| `/fin`          | Docker / Node only: returns a Hello World HTML page, then closes the TCP connection (FIN). On Cloudflare Workers / Pages the edge owns the TCP connection and cannot send FIN, so this path returns 404 |
+
 ## Verification (optional)
 
 Provide a Turnstile Site Key, Secret and allowed hostname. New Ping measurements require configured Turnstile (managed or Non-interactive), alongside the existing five-request-per-minute limit. Each batch uses a fresh token; the server validates its `ping_start` action, hostname and validity, and rejects measurements when verification is unconfigured. WebMCP calls also show the verification dialog.

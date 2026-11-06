@@ -427,3 +427,51 @@ test("WeChat icon uses its official resource because the icon provider returns 4
     assert.equal((await worker.fetch(request("/api/icons/weixin.qq.com"), env)).status, 200);
   });
 });
+
+test("connectivity probes return empty 204/200 without hitting assets or the API guards", async () => {
+  const blocked = {
+    ...env,
+    FIN_ENABLED: "true",
+    ASSETS: { fetch: async () => assert.fail("probe must not read assets") },
+    API_LIMITER: {
+      limit: async () => assert.fail("probe is not rate limited"),
+    },
+  };
+  for (const [path, status] of [
+    ["/generate_204", 204],
+    ["/generate_200", 200],
+    ["/fin", 200],
+  ]) {
+    const response = await worker.fetch(
+      request(path, { headers: { Origin: "https://other.example" } }),
+      blocked,
+    );
+    assert.equal(response.status, status, path);
+    const body = await response.text();
+    if (path === "/fin") assert.match(body, /<h1>Hello World<\/h1>/);
+    else assert.equal(body, "", path);
+    assert.match(response.headers.get("Cache-Control"), /no-store/, path);
+    const head = await worker.fetch(request(path, { method: "HEAD" }), blocked);
+    assert.equal(head.status, status, path);
+  }
+  assert.equal(
+    (await worker.fetch(request("/fin"), blocked)).headers.get("Connection"),
+    "close",
+  );
+  // Cloudflare cannot send FIN, so the Workers/Pages build blocks /fin.
+  const cloudflare = await worker.fetch(request("/fin"), {
+    ...blocked,
+    FIN_ENABLED: undefined,
+  });
+  assert.equal(cloudflare.status, 404);
+  assert.equal(await cloudflare.text(), "Not found");
+  assert.equal(
+    (await worker.fetch(request("/generate_204", { method: "POST" }), blocked))
+      .status,
+    405,
+  );
+  assert.equal(
+    await (await worker.fetch(request("/generate_2040"), env)).text(),
+    "SPA asset",
+  );
+});

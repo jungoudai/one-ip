@@ -141,6 +141,8 @@ export async function createApp({
   const env = {
     ...config,
     LOCAL_DEV: "false",
+    // Only this Node server owns the TCP socket, so only it can serve /fin.
+    FIN_ENABLED: "true",
     ASSETS: { fetch: staticAssets(root) },
   };
   let warnedMissingForward = false;

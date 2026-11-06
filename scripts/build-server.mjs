@@ -1,6 +1,7 @@
 import { build } from "esbuild";
 import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { PROBE_PATHS } from "../worker/connectivity.js";
 
 const root = new URL("../", import.meta.url);
 const target = process.argv[2];
@@ -32,7 +33,7 @@ if (target === "pages") {
     JSON.stringify(
       {
         version: 1,
-        include: ["/api", "/api/*", "/worker", "/worker/*"],
+        include: ["/api", "/api/*", "/worker", "/worker/*", ...PROBE_PATHS],
         exclude: [],
       },
       null,

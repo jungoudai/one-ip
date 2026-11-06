@@ -4,6 +4,7 @@ import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { createApp } from "./app.mjs";
 import { installMemoryCache } from "./memory-cache.mjs";
+import { FIN_PATH } from "../worker/connectivity.js";
 
 // Node has no Cloudflare edge cache; keep upstream lookups bounded per process.
 installMemoryCache();
@@ -14,6 +15,12 @@ const { handle, securityHeaders } = await createApp({
 const server = createServer(
   { maxHeaderSize: 16_384, requestTimeout: 30_000 },
   async (incoming, outgoing) => {
+    // Close the TCP connection right away: end() half-closes the socket, so
+    // the kernel sends FIN (not RST) and the client sees an empty reply.
+    if (incoming.url?.split("?")[0] === FIN_PATH) {
+      incoming.socket.end();
+      return;
+    }
     try {
       const headers = new Headers();
       for (const [name, value] of Object.entries(incoming.headers))

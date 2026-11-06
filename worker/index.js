@@ -2,6 +2,7 @@ import { getAiStatus } from "./ai-status.js";
 import { cachedJson } from "./cache.js";
 import { challengeConfig, verifyChallenge } from "./challenges.js";
 import { getCloudStatus } from "./cloud-status.js";
+import { connectivityProbe } from "./connectivity.js";
 import { cfGeo, geoIp, secondaryGeo } from "./geo.js";
 import { clientIp, HttpError, inputJson, json, publicIp } from "./http.js";
 import { siteIcon } from "./icons.js";
@@ -19,6 +20,8 @@ import { lookupRegistration, registrationTarget } from "./whois.js";
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    const probe = connectivityProbe(request, url.pathname);
+    if (probe) return probe;
     if (url.pathname === "/worker" || url.pathname.startsWith("/worker/"))
       return new Response("Not found", { status: 404 });
     if (url.pathname !== "/api" && !url.pathname.startsWith("/api/")) {

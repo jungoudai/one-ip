@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import {
+  mockPingVerification,
+  pingVerification,
+  pingVerificationEnv,
+} from "./ping-verification-fixture.mjs";
 import worker from "../.worker-test/index.js";
 import {
   publicIp,
@@ -9,11 +14,6 @@ import {
   HttpError,
 } from "../worker/http.js";
 import { mapConfig } from "../worker/map.js";
-import {
-  mockPingVerification,
-  pingVerification,
-  pingVerificationEnv,
-} from "./ping-verification-fixture.mjs";
 
 const env = {
   APP_ENV: "prod",
@@ -173,7 +173,10 @@ test("visitor information uses this request only and is not cacheable", async ()
   }
 });
 test("removed legacy risk endpoint returns 404", async () => {
-  assert.equal((await worker.fetch(request("/api/iprisk/1.1.1.1"), env)).status, 404);
+  assert.equal(
+    (await worker.fetch(request("/api/iprisk/1.1.1.1"), env)).status,
+    404,
+  );
 });
 test("removed DNS endpoints return 404 without querying upstream services", async () => {
   await withFetch(
@@ -288,142 +291,323 @@ test("removed IP card endpoint returns 404", async () => {
 
 test("domain registration bypasses rdap.org using the IANA registry endpoint", async () => {
   const urls = [];
-  await withFetch(async (url) => {
-    urls.push(url);
-    if (url === "https://data.iana.org/rdap/dns.json") return Response.json({ services: [[["com"], ["https://rdap.verisign.com/com/v1/"]]] });
-    assert.equal(url, "https://rdap.verisign.com/com/v1/domain/qq.com");
-    return Response.json({ ldhName: "QQ.COM" });
-  }, async () => {
-    const response = await worker.fetch(request("/api/whois/lookup/qq.com"), env);
-    assert.equal(response.status, 200);
-    assert.equal((await response.json()).data.ldhName, "QQ.COM");
-  });
+  await withFetch(
+    async (url) => {
+      urls.push(url);
+      if (url === "https://data.iana.org/rdap/dns.json")
+        return Response.json({
+          services: [[["com"], ["https://rdap.verisign.com/com/v1/"]]],
+        });
+      assert.equal(url, "https://rdap.verisign.com/com/v1/domain/qq.com");
+      return Response.json({ ldhName: "QQ.COM" });
+    },
+    async () => {
+      const response = await worker.fetch(
+        request("/api/whois/lookup/qq.com"),
+        env,
+      );
+      assert.equal(response.status, 200);
+      assert.equal((await response.json()).data.ldhName, "QQ.COM");
+    },
+  );
   assert.equal(urls.length, 2);
 });
 
 test("unsupported domain suffix returns an explicit RDAP error", async () => {
-  await withFetch(async (url) => {
-    assert.equal(url, "https://data.iana.org/rdap/dns.json");
-    return Response.json({ services: [] });
-  }, async () => {
-    const response = await worker.fetch(request("/api/whois/lookup/domain.zzz"), env);
-    assert.equal(response.status, 422);
-  });
+  await withFetch(
+    async (url) => {
+      assert.equal(url, "https://data.iana.org/rdap/dns.json");
+      return Response.json({ services: [] });
+    },
+    async () => {
+      const response = await worker.fetch(
+        request("/api/whois/lookup/domain.zzz"),
+        env,
+      );
+      assert.equal(response.status, 422);
+    },
+  );
 });
 
 test("Ping catalog lists all online cities and aggregates probe counts", async () => {
-  await withFetch(async (url) => {
-    assert.equal(url, "https://api.globalping.io/v1/probes");
-    return Response.json([
-      { location: { country: "JP", city: "Tokyo" } },
-      { location: { country: "JP", city: "Tokyo" } },
-      { location: { country: "NZ", city: "Auckland" } },
-    ]);
-  }, async () => {
-    const response = await worker.fetch(request("/api/ping/nodes"), env);
-    assert.equal(response.status, 200);
-    const data = await response.json();
-    assert.equal(data.length, 2);
-    assert.equal(data[0].id, "JP:Tokyo");
-    assert.equal(data[0].probes, 2);
-    assert.equal(data[1].id, "NZ:Auckland");
-  });
+  await withFetch(
+    async (url) => {
+      assert.equal(url, "https://api.globalping.io/v1/probes");
+      return Response.json([
+        { location: { country: "JP", city: "Tokyo" } },
+        { location: { country: "JP", city: "Tokyo" } },
+        { location: { country: "NZ", city: "Auckland" } },
+      ]);
+    },
+    async () => {
+      const response = await worker.fetch(request("/api/ping/nodes"), env);
+      assert.equal(response.status, 200);
+      const data = await response.json();
+      assert.equal(data.length, 2);
+      assert.equal(data[0].id, "JP:Tokyo");
+      assert.equal(data[0].probes, 2);
+      assert.equal(data[1].id, "NZ:Auckland");
+    },
+  );
 });
 test("Ping accepts only catalog locations for dynamic selection", async () => {
-  await withFetch(mockPingVerification(async (url, init) => {
-    if (url.endsWith("/probes")) return Response.json([{ location: { country: "NZ", city: "Auckland" } }]);
-    assert.equal(url, "https://api.globalping.io/v1/measurements");
-    const payload = JSON.parse(init.body);
-    assert.deepEqual(payload.locations, [{ country: "NZ", city: "Auckland", limit: 1 }]);
-    return Response.json({ id: "measurement-test" });
-  }), async () => {
-    const makeRequest = (id) => request("/api/ping/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host: "1.1.1.1", nodes: [id], verification: pingVerification }) });
-    assert.equal((await worker.fetch(makeRequest("NZ:Auckland"), env)).status, 200);
-    assert.equal((await worker.fetch(makeRequest("NZ:Unknown"), env)).status, 400);
-  });
+  await withFetch(
+    mockPingVerification(async (url, init) => {
+      if (url.endsWith("/probes"))
+        return Response.json([
+          { location: { country: "NZ", city: "Auckland" } },
+        ]);
+      assert.equal(url, "https://api.globalping.io/v1/measurements");
+      const payload = JSON.parse(init.body);
+      assert.deepEqual(payload.locations, [
+        { country: "NZ", city: "Auckland", limit: 1 },
+      ]);
+      return Response.json({ id: "measurement-test" });
+    }),
+    async () => {
+      const makeRequest = (id) =>
+        request("/api/ping/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            host: "1.1.1.1",
+            nodes: [id],
+            verification: pingVerification,
+          }),
+        });
+      assert.equal(
+        (await worker.fetch(makeRequest("NZ:Auckland"), env)).status,
+        200,
+      );
+      assert.equal(
+        (await worker.fetch(makeRequest("NZ:Unknown"), env)).status,
+        400,
+      );
+    },
+  );
 });
 
-
 test("regional Ping requests spread probes across continents without conflicting limits", async () => {
-  await withFetch(mockPingVerification(async (url, init) => {
-    assert.equal(url, "https://api.globalping.io/v1/measurements");
-    const body = JSON.parse(init.body);
-    assert.deepEqual(body.locations, [ { continent: "AS", limit: 3 }, { continent: "EU", limit: 3 } ]);
-    assert.equal(body.limit, undefined);
-    assert.equal(body.inProgressUpdates, true);
-    return Response.json({ id: "regional-test" });
-  }), async () => {
-    const response = await worker.fetch(request("/api/ping/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host: "1.1.1.1", regions: ["AS", "EU"], perRegion: 3, verification: pingVerification }) }), env);
-    assert.equal(response.status, 200);
-    const invalid = await worker.fetch(request("/api/ping/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host: "1.1.1.1", regions: ["AS", "EU"], perRegion: 30, verification: pingVerification }) }), env);
-    assert.equal(invalid.status, 400);
-  });
+  await withFetch(
+    mockPingVerification(async (url, init) => {
+      assert.equal(url, "https://api.globalping.io/v1/measurements");
+      const body = JSON.parse(init.body);
+      assert.deepEqual(body.locations, [
+        { continent: "AS", limit: 3 },
+        { continent: "EU", limit: 3 },
+      ]);
+      assert.equal(body.limit, undefined);
+      assert.equal(body.inProgressUpdates, true);
+      return Response.json({ id: "regional-test" });
+    }),
+    async () => {
+      const response = await worker.fetch(
+        request("/api/ping/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            host: "1.1.1.1",
+            regions: ["AS", "EU"],
+            perRegion: 3,
+            verification: pingVerification,
+          }),
+        }),
+        env,
+      );
+      assert.equal(response.status, 200);
+      const invalid = await worker.fetch(
+        request("/api/ping/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            host: "1.1.1.1",
+            regions: ["AS", "EU"],
+            perRegion: 30,
+            verification: pingVerification,
+          }),
+        }),
+        env,
+      );
+      assert.equal(invalid.status, 400);
+    },
+  );
 });
 
 test("preferred Ping pins the online major provider ASN while custom mode keeps city selection", async () => {
-  await withFetch(mockPingVerification(async (url, init) => {
-    if (url.endsWith("/probes")) return Response.json([
-      { location: { country: "US", city: "Seattle", asn: 123, network: "Small ISP" } },
-      { location: { country: "US", city: "Seattle", asn: 16509, network: "Amazon.com, Inc." } },
-    ]);
-    assert.equal(url, "https://api.globalping.io/v1/measurements");
-    const body = JSON.parse(init.body);
-    assert.equal(body.locations[0].asn, 16509);
-    assert.equal(body.locations[0].city, "Seattle");
-    return Response.json({ id: "preferred-test" });
-  }), async () => {
-    const response = await worker.fetch(request("/api/ping/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host: "1.1.1.1", nodes: ["US:Seattle"], preferred: true, verification: pingVerification }) }), env);
-    assert.equal(response.status, 200);
-  });
+  await withFetch(
+    mockPingVerification(async (url, init) => {
+      if (url.endsWith("/probes"))
+        return Response.json([
+          {
+            location: {
+              country: "US",
+              city: "Seattle",
+              asn: 123,
+              network: "Small ISP",
+            },
+          },
+          {
+            location: {
+              country: "US",
+              city: "Seattle",
+              asn: 16509,
+              network: "Amazon.com, Inc.",
+            },
+          },
+        ]);
+      assert.equal(url, "https://api.globalping.io/v1/measurements");
+      const body = JSON.parse(init.body);
+      assert.equal(body.locations[0].asn, 16509);
+      assert.equal(body.locations[0].city, "Seattle");
+      return Response.json({ id: "preferred-test" });
+    }),
+    async () => {
+      const response = await worker.fetch(
+        request("/api/ping/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            host: "1.1.1.1",
+            nodes: ["US:Seattle"],
+            preferred: true,
+            verification: pingVerification,
+          }),
+        }),
+        env,
+      );
+      assert.equal(response.status, 200);
+    },
+  );
 });
 
 test("icon proxy uses a fixed provider, caches images and strips upstream cookies", async () => {
-  await withFetch(async (url, options) => {
-    assert.equal(url, "https://icons.duckduckgo.com/ip3/github.com.ico");
-    assert.equal(options.redirect, "manual");
-    assert.equal(options.cf.cacheTtlByStatus["200-299"], 604800);
-    return new Response(new Uint8Array([0, 0, 1, 0]), {
-      headers: { "Content-Type": "image/x-icon", "Set-Cookie": "upstream=1" },
-    });
-  }, async () => {
-    const response = await worker.fetch(request("/api/icons/github.com"), env);
-    assert.equal(response.status, 200);
-    assert.equal(response.headers.get("Cache-Control"), "public, max-age=86400");
-    assert.equal(response.headers.get("Set-Cookie"), null);
-    assert.equal((await response.arrayBuffer()).byteLength, 4);
-  });
+  await withFetch(
+    async (url, options) => {
+      assert.equal(url, "https://icons.duckduckgo.com/ip3/github.com.ico");
+      assert.equal(options.redirect, "manual");
+      assert.equal(options.cf.cacheTtlByStatus["200-299"], 604800);
+      return new Response(new Uint8Array([0, 0, 1, 0]), {
+        headers: { "Content-Type": "image/x-icon", "Set-Cookie": "upstream=1" },
+      });
+    },
+    async () => {
+      const response = await worker.fetch(
+        request("/api/icons/github.com"),
+        env,
+      );
+      assert.equal(response.status, 200);
+      assert.equal(
+        response.headers.get("Cache-Control"),
+        "public, max-age=86400",
+      );
+      assert.equal(response.headers.get("Set-Cookie"), null);
+      assert.equal((await response.arrayBuffer()).byteLength, 4);
+    },
+  );
 });
 
 test("icon proxy rejects arbitrary URLs and non-image responses", async () => {
-  await withFetch(async () => { throw new Error("must not fetch"); }, async () => {
-    assert.equal((await worker.fetch(request("/api/icons/https%3A%2F%2Fevil.com"), env)).status, 400);
-  });
-  await withFetch(async () => new Response("<html>error</html>", {
-    headers: { "Content-Type": "text/html" },
-  }), async () => {
-    const response = await worker.fetch(request("/api/icons/github.com"), env);
-    assert.equal(response.status, 502);
-    assert.equal(response.headers.get("Cache-Control"), "no-store");
-  });
+  await withFetch(
+    async () => {
+      throw new Error("must not fetch");
+    },
+    async () => {
+      assert.equal(
+        (await worker.fetch(request("/api/icons/https%3A%2F%2Fevil.com"), env))
+          .status,
+        400,
+      );
+    },
+  );
+  await withFetch(
+    async () =>
+      new Response("<html>error</html>", {
+        headers: { "Content-Type": "text/html" },
+      }),
+    async () => {
+      const response = await worker.fetch(
+        request("/api/icons/github.com"),
+        env,
+      );
+      assert.equal(response.status, 502);
+      assert.equal(response.headers.get("Cache-Control"), "no-store");
+    },
+  );
 });
 
 test("icon proxy rejects upstream redirects without forwarding Location", async () => {
-  await withFetch(async () => new Response(null, {
-    status: 302,
-    headers: { Location: "https://example.com/icon.ico" },
-  }), async () => {
-    const response = await worker.fetch(request("/api/icons/github.com"), env);
-    assert.equal(response.status, 502);
-    assert.equal(response.headers.get("Location"), null);
-    assert.deepEqual(await response.json(), { error: "图标暂不可用" });
-  });
+  await withFetch(
+    async () =>
+      new Response(null, {
+        status: 302,
+        headers: { Location: "https://example.com/icon.ico" },
+      }),
+    async () => {
+      const response = await worker.fetch(
+        request("/api/icons/github.com"),
+        env,
+      );
+      assert.equal(response.status, 502);
+      assert.equal(response.headers.get("Location"), null);
+      assert.deepEqual(await response.json(), { error: "图标暂不可用" });
+    },
+  );
 });
 
 test("WeChat icon uses its official resource because the icon provider returns 404", async () => {
-  await withFetch(async (url) => {
-    assert.equal(url, "https://res.wx.qq.com/a/wx_fed/assets/res/NTI4MWU5.ico");
-    return new Response("icon", { headers: { "Content-Type": "image/x-icon" } });
-  }, async () => {
-    assert.equal((await worker.fetch(request("/api/icons/weixin.qq.com"), env)).status, 200);
-  });
+  await withFetch(
+    async (url) => {
+      assert.equal(
+        url,
+        "https://res.wx.qq.com/a/wx_fed/assets/res/NTI4MWU5.ico",
+      );
+      return new Response("icon", {
+        headers: { "Content-Type": "image/x-icon" },
+      });
+    },
+    async () => {
+      assert.equal(
+        (await worker.fetch(request("/api/icons/weixin.qq.com"), env)).status,
+        200,
+      );
+    },
+  );
+});
+
+test("connectivity probes return empty 204/200 without hitting assets or the API guards", async () => {
+  const blocked = {
+    ...env,
+    ASSETS: { fetch: async () => assert.fail("probe must not read assets") },
+    API_LIMITER: {
+      limit: async () => assert.fail("probe is not rate limited"),
+    },
+  };
+  for (const [path, status] of [
+    ["/generate_204", 204],
+    ["/generate_200", 200],
+    ["/fin", 204],
+  ]) {
+    const response = await worker.fetch(
+      request(path, { headers: { Origin: "https://other.example" } }),
+      blocked,
+    );
+    assert.equal(response.status, status, path);
+    assert.equal(await response.text(), "", path);
+    assert.match(response.headers.get("Cache-Control"), /no-store/, path);
+    const head = await worker.fetch(request(path, { method: "HEAD" }), blocked);
+    assert.equal(head.status, status, path);
+  }
+  assert.equal(
+    (await worker.fetch(request("/fin"), blocked)).headers.get("Connection"),
+    "close",
+  );
+  assert.equal(
+    (await worker.fetch(request("/generate_204", { method: "POST" }), blocked))
+      .status,
+    405,
+  );
+  assert.equal(
+    await (await worker.fetch(request("/generate_2040"), env)).text(),
+    "SPA asset",
+  );
 });

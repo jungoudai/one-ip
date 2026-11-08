@@ -77,6 +77,25 @@ Docker geolocation uses public providers and does not present private socket add
 
 Workers retains native rate limiting. Pages and Docker use per-instance memory limits: 180 ordinary requests/minute, a separate 180 icon requests/minute, and 5 POST requests/minute, counting each IPv6 /64 as one client. Counts reset on restart and are not shared across replicas. Pages spreads counts across many edge isolates, so the fallback is weak there; add a Cloudflare WAF rate limiting rule for `/api/*` when strict limits matter.
 
+## Command-line lookup
+
+Command-line clients such as curl, wget, HTTPie and xh (detected by `User-Agent`) get plain text instead of the page; browsers are unaffected:
+
+```console
+$ curl ip.example.com
+IP:       1.1.1.1
+Location: Tokyo, JP
+ISP:      Cloudflare, Inc.
+ASN:      AS13335
+Timezone: Asia/Tokyo
+Coords:   35.6895, 139.6917
+
+$ curl ip.example.com/ip
+1.1.1.1
+```
+
+`/` shows the source IP with location, ISP, ASN and timezone; `/ip` prints only the address for scripts. Workers / Pages use Cloudflare edge metadata; Docker uses the same public provider as `/api/me` and prints just the IP if that lookup fails. Without a real public visitor IP the response is 503.
+
 ## Connectivity probes
 
 These paths skip the same-origin check and rate limit, return no body and are never cached:

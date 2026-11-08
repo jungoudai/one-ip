@@ -10,6 +10,7 @@ import { ipNetwork } from "./ip-network.js";
 import { ipType } from "./ip-type.js";
 import { mapConfig } from "./map.js";
 import { startPing, pingResult, pingNodes } from "./ping.js";
+import { plainText } from "./plain-text.js";
 import { rateLimit } from "./rate-limit.js";
 import { normalizeStatus } from "./service-status.js";
 import services from "./services.json";
@@ -24,6 +25,8 @@ export default {
       fin: env.FIN_ENABLED === "true",
     });
     if (probe) return probe;
+    const plain = await plainText(request, url.pathname, env);
+    if (plain) return plain;
     if (url.pathname === "/worker" || url.pathname.startsWith("/worker/"))
       return new Response("Not found", { status: 404 });
     if (url.pathname !== "/api" && !url.pathname.startsWith("/api/")) {

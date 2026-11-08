@@ -77,6 +77,25 @@ Docker 访客归属地使用公开数据源；私网连接地址不会当作公�
 
 Workers 使用原生限流。Pages 和 Docker 使用每个实例内的内存限流（普通查询/图标各 180 次/分钟，POST 5 次/分钟），IPv6 按 /64 计数，重启会重置，多个实例不共享计数。Pages 的计数分散在多个边缘实例中，基本不起作用；需要严格限流时，在 Cloudflare 控制台为 `/api/*` 配置 WAF 限流规则。
 
+## 命令行查询
+
+用 curl、wget、HTTPie、xh 等命令行工具访问时（按 `User-Agent` 识别），返回纯文本而不是网页；浏览器访问不受影响：
+
+```console
+$ curl ip.example.com
+IP:       1.1.1.1
+Location: Tokyo, JP
+ISP:      Cloudflare, Inc.
+ASN:      AS13335
+Timezone: Asia/Tokyo
+Coords:   35.6895, 139.6917
+
+$ curl ip.example.com/ip
+1.1.1.1
+```
+
+`/` 返回来源 IP 及归属地、运营商、ASN、时区；`/ip` 只返回 IP，方便脚本使用。Workers / Pages 使用 Cloudflare 边缘元数据，Docker 使用与 `/api/me` 相同的公开数据源，查询失败时只返回 IP。拿不到真实公网 IP 时返回 503。
+
 ## 连通性检测接口
 
 部署后可直接访问以下路径，不受同源和频率限制，响应无内容且不缓存：

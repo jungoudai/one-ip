@@ -475,3 +475,115 @@ test("connectivity probes return empty 204/200 without hitting assets or the API
     "SPA asset",
   );
 });
+
+test("curl gets plain-text IP info on / and /ip while browsers keep the SPA", async () => {
+  const cli = (path, init = {}) => {
+    const req = request(path, {
+      ...init,
+      headers: {
+        "User-Agent": "curl/8.7.1",
+        "CF-Connecting-IP": "1.1.1.1",
+        ...init.headers,
+      },
+    });
+    Object.defineProperty(req, "cf", {
+      value: {
+        country: "JP",
+        region: "Tokyo",
+        city: "Tokyo",
+        asn: 13335,
+        asOrganization: "Cloudflare, Inc.",
+        timezone: "Asia/Tokyo",
+        latitude: "35.6895",
+        longitude: "139.6917",
+      },
+    });
+    return req;
+  };
+  await withFetch(
+    async () => assert.fail("edge metadata needs no upstream lookup"),
+    async () => {
+      const response = await worker.fetch(cli("/"), env);
+      assert.equal(response.status, 200);
+      assert.match(response.headers.get("Content-Type"), /^text\/plain/);
+      assert.equal(response.headers.get("Cache-Control"), "no-store");
+      assert.equal(response.headers.get("Vary"), "User-Agent");
+      assert.equal(
+        await response.text(),
+        [
+          "IP:       1.1.1.1",
+          "Location: Tokyo, JP",
+          "ISP:      Cloudflare, Inc.",
+          "ASN:      AS13335",
+          "Timezone: Asia/Tokyo",
+          "Coords:   35.6895, 139.6917",
+          "",
+        ].join("\n"),
+      );
+      assert.equal(await (await worker.fetch(cli("/ip"), env)).text(), "1.1.1.1\n");
+      const head = await worker.fetch(cli("/", { method: "HEAD" }), env);
+      assert.equal(head.status, 200);
+      assert.equal(await head.text(), "");
+    },
+  );
+  for (const agent of ["Wget/1.21.4", "HTTPie/3.2.2", "xh/0.22.0"])
+    assert.match(
+      await (
+        await worker.fetch(cli("/", { headers: { "User-Agent": agent } }), env)
+      ).text(),
+      /^IP: +1\.1\.1\.1$/m,
+      agent,
+    );
+  for (const path of ["/", "/ip"])
+    assert.equal(
+      await (
+        await worker.fetch(
+          cli(path, {
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+            },
+          }),
+          env,
+        )
+      ).text(),
+      "SPA asset",
+      path,
+    );
+  // Other paths stay with the SPA even for curl.
+  assert.equal(await (await worker.fetch(cli("/whois"), env)).text(), "SPA asset");
+  // No public visitor address: say so instead of inventing one.
+  const missing = await worker.fetch(
+    cli("/", { headers: { "CF-Connecting-IP": "10.0.0.1" } }),
+    env,
+  );
+  assert.equal(missing.status, 503);
+  assert.match(await missing.text(), /Unable to determine your public IP/);
+});
+
+test("curl text falls back to a geo lookup when there is no edge metadata", async () => {
+  await withFetch(
+    async (url) => {
+      assert.equal(String(url), "https://ipwho.is/8.8.8.8");
+      return Response.json({
+        success: true,
+        ip: "8.8.8.8",
+        country: "United States",
+        country_code: "US",
+        region: "California",
+        city: "Mountain View",
+        connection: { isp: "Google LLC", asn: 15169 },
+        timezone: { id: "America/Los_Angeles" },
+      });
+    },
+    async () => {
+      const req = request("/", { headers: { "User-Agent": "curl/8.7.1" } });
+      req.clientIp = "8.8.8.8";
+      req.clientIpSource = "socket";
+      const body = await (await worker.fetch(req, env)).text();
+      assert.match(body, /^Location: Mountain View, California, United States \(US\)$/m);
+      assert.match(body, /^ISP: +Google LLC$/m);
+      assert.match(body, /^ASN: +AS15169$/m);
+    },
+  );
+});
